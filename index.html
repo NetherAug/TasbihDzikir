@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Tasbih · Dzikir</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+
+  <!-- React + Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Fonts: Amiri (Arabic), Lora (display), Raleway (UI) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Lora:wght@400;500;600&family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: 'Raleway', system-ui, sans-serif;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #efe9dd 0%, transparent 60%),
+        linear-gradient(160deg, #e9e3d6 0%, #d9d2c2 100%);
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .font-amiri { font-family: 'Amiri', serif; }
+    .font-lora  { font-family: 'Lora', serif; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    canvas { display: block; touch-action: manipulation; }
+    @keyframes floatIn { from { opacity: 0; transform: translateY(16px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .animate-floatIn { animation: floatIn .6s cubic-bezier(.22,1,.36,1) both; }
+    @media (prefers-reduced-motion: reduce) {
+      .animate-floatIn { animation-duration: .01ms; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- App source: custom type so Babel's auto-runner skips it; we compile it
+       ourselves below with the classic JSX runtime (works in a classic script). -->
+  <script type="text/jsx-source" id="app-source">
+    const { useState, useRef, useEffect, useCallback } = React;
+
+    /* ------------------------------------------------------------------ */
+    /*  Inline Lucide icons (genuine Lucide path data — keeps file self-   */
+    /*  contained with no external icon CDN)                               */
+    /* ------------------------------------------------------------------ */
+    const Svg = ({ size = 24, color, style, children }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+           stroke={color || 'currentColor'} strokeWidth="2"
+           strokeLinecap="round" strokeLinejoin="round" style={style}>
+        {children}
+      </svg>
+    );
+    const Icon = {
+      Volume2: (p) => <Svg {...p}>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+      </Svg>,
+      VolumeX: (p) => <Svg {...p}>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <line x1="22" y1="9" x2="16" y2="15"/>
+        <line x1="16" y1="9" x2="22" y2="15"/>
+      </Svg>,
+      Vibrate: (p) => <Svg {...p}>
+        <path d="m2 8 2 2-2 2 2 2-2 2"/>
+        <path d="m22 8-2 2 2 2-2 2 2 2"/>
+        <rect width="8" height="14" x="8" y="5" rx="1"/>
+      </Svg>,
+      Moon: (p) => <Svg {...p}>
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+      </Svg>,
+      Sun: (p) => <Svg {...p}>
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2"/><path d="M12 20v2"/>
+        <path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>
+        <path d="M2 12h2"/><path d="M20 12h2"/>
+        <path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+      </Svg>,
+      Infinity: (p) => <Svg {...p}>
+        <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/>
+      </Svg>,
+      RotateCcw: (p) => <Svg {...p}>
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </Svg>,
+      Check: (p) => <Svg {...p}>
+        <path d="M20 6 9 17l-5-5"/>
+      </Svg>,
+    };
+
+    /* ------------------------------------------------------------------ */
+    /*  Data                                                               */
+    /* ------------------------------------------------------------------ */
+    const DHIKR = [
+      { id: 'subhan', label: 'Subhanallah',   arabic: 'سُبْحَانَ ٱللَّٰهِ', translit: 'Subhan’Allah',  meaning: 'Glory be to Allah' },
+      { id: 'hamd',   label: 'Alhamdulillah', arabic: 'ٱلْحَمْدُ لِلَّٰهِ', translit: 'Alhamdulillah', meaning: 'All praise is due to Allah' },
+      { id: 'akbar',  label: 'Allahu Akbar',  arabic: 'ٱللَّٰهُ أَكْبَرُ',  translit: 'Allahu Akbar',  meaning: 'Allah is the Greatest' },
+      { id: 'custom', label: 'Custom',        arabic: '',                  translit: '',              meaning: '' },
+    ];
+    const TARGETS = [33, 99, Infinity];
+
+    /* ------------------------------------------------------------------ */
+    /*  Theme tokens                                                       */
+    /* ------------------------------------------------------------------ */
+    const theme = (dark) => dark ? {
+      bg0: '#121212', bg1: '#181a19', surface: 'rgba(255,255,255,0.04)',
+      surfaceBorder: 'rgba(255,255,255,0.08)',
+      text: '#F3F1EA', textMuted: '#9a988f', emerald: '#1f6f5c', emeraldDeep: '#12463a',
+      gold: '#d8b765', sand: '#2a2722',
+      beadTop: '#3a3631', beadTopHi: '#54504a', beadBottom: '#1f6f5c', beadBottomHi: '#2e9077',
+      marker: '#d8b765', markerHi: '#f0d493', string: 'rgba(216,183,101,0.35)',
+      glow: 'rgba(216,183,101,', floor: 'rgba(255,255,255,0.05)',
+    } : {
+      bg0: '#FDFBF7', bg1: '#F6F1E7', surface: 'rgba(255,255,255,0.7)',
+      surfaceBorder: 'rgba(120,100,70,0.14)',
+      text: '#2c2a26', textMuted: '#8a8275', emerald: '#0d7a5f', emeraldDeep: '#0a5c47',
+      gold: '#c39b46', sand: '#efe6d4',
+      beadTop: '#cdbfa6', beadTopHi: '#efe7d6', beadBottom: '#0d7a5f', beadBottomHi: '#2fa583',
+      marker: '#c39b46', markerHi: '#f0d493', string: 'rgba(120,100,70,0.28)',
+      glow: 'rgba(195,155,70,', floor: 'rgba(120,100,70,0.06)',
+    };
+
+    /* ------------------------------------------------------------------ */
+    /*  Sound (synthesised wooden "clink") + haptics                       */
+    /* ------------------------------------------------------------------ */
+    function useClink(enabled) {
+      const ctxRef = useRef(null);
+      const ensure = () => {
+        if (!ctxRef.current) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) ctxRef.current = new AC();
+        }
+        return ctxRef.current;
+      };
+      return useCallback(() => {
+        if (!enabled) return;
+        const ctx = ensure();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+        const t = ctx.currentTime;
+        // short woody knock: two quick detuned sine/triangle blips with fast decay
+        [ [320, 'triangle', 0.16], [540, 'sine', 0.10] ].forEach(([f, type, g], i) => {
+          const o = ctx.createOscillator();
+          const a = ctx.createGain();
+          o.type = type; o.frequency.setValueAtTime(f, t);
+          o.frequency.exponentialRampToValueAtTime(f * 0.6, t + 0.08);
+          a.gain.setValueAtTime(0.0001, t);
+          a.gain.exponentialRampToValueAtTime(g, t + 0.004);
+          a.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+          o.connect(a); a.connect(ctx.destination);
+          o.start(t); o.stop(t + 0.16);
+        });
+      }, [enabled]);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Toggle pill                                                        */
+    /* ------------------------------------------------------------------ */
+    function HeaderBtn({ active, onClick, children, label, t }) {
+      return (
+        <button
+          aria-label={label}
+          onClick={(e) => { e.stopPropagation(); onClick(); }}
+          className="h-10 w-10 grid place-items-center rounded-full cursor-pointer transition-all duration-200 active:scale-90"
+          style={{
+            background: active ? t.emerald : t.surface,
+            border: `1px solid ${active ? 'transparent' : t.surfaceBorder}`,
+            color: active ? '#fff' : t.textMuted,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    /* ================================================================== */
+    /*  Main App                                                           */
+    /* ================================================================== */
+    function App() {
+      const [dark, setDark] = useState(false);
+      const [sound, setSound] = useState(true);
+      const [haptic, setHaptic] = useState(true);
+      const [dhikrIdx, setDhikrIdx] = useState(0);
+      const [customText, setCustomText] = useState('');
+      const [targetIdx, setTargetIdx] = useState(0);
+      const [count, setCount] = useState(0);
+      const [pulse, setPulse] = useState(0);     // bump key for haptic pulse
+      const [done, setDone] = useState(false);
+      const [resetHold, setResetHold] = useState(0); // 0..1 long-press progress
+
+      const t = theme(dark);
+      const dhikr = DHIKR[dhikrIdx];
+      const target = TARGETS[targetIdx];
+      const isInfinite = target === Infinity;
+      const clink = useClink(sound);
+
+      /* ---- canvas + physics refs (mutable, outside React render) ---- */
+      const canvasRef = useRef(null);
+      const sim = useRef({
+        w: 0, h: 0, dpr: 1, gate: 0, spacing: 0, r: 0,
+        remaining: 33, target: 33, infinite: false,
+        slide: 0,                 // top-string slide animation (-spacing -> 0)
+        falling: [], settled: [], particles: [],
+        settledCount: 0,
+        glow: 0,                  // completion glow 0..1
+        refill: 0,                // refill shuffle progress 0..1 (1 = idle/full)
+        theme: t, last: 0,
+      });
+
+      /* keep latest theme inside the loop */
+      useEffect(() => { sim.current.theme = t; }, [dark]);
+
+      /* ---- (re)initialise the bead field when target / dhikr changes -- */
+      const initField = useCallback((tgt) => {
+        const s = sim.current;
+        s.target = tgt === Infinity ? 0 : tgt;
+        s.infinite = tgt === Infinity;
+        s.remaining = s.infinite ? 0 : tgt;
+        s.falling = []; s.settled = []; s.particles = [];
+        s.settledCount = 0; s.slide = 0; s.glow = 0; s.refill = 1;
+      }, []);
+
+      useEffect(() => { initField(target); setCount(0); setDone(false); }, [targetIdx]);
+      useEffect(() => { initField(target); setCount(0); setDone(false); }, [dhikrIdx]);
+
+      /* ------------------------------------------------------------------ */
+      /*  Resize / DPR handling                                             */
+      /* ------------------------------------------------------------------ */
+      useEffect(() => {
+        const cv = canvasRef.current;
+        const resize = () => {
+          const rect = cv.getBoundingClientRect();
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          cv.width = Math.round(rect.width * dpr);
+          cv.height = Math.round(rect.height * dpr);
+          const s = sim.current;
+          s.w = rect.width; s.h = rect.height; s.dpr = dpr;
+          s.r = Math.max(9, Math.min(15, rect.width * 0.032));
+          s.spacing = s.r * 2.15;
+          s.gate = rect.height * 0.46;        // the counting gate (string neck)
+        };
+        resize();
+        const ro = new ResizeObserver(resize);
+        ro.observe(cv);
+        return () => ro.disconnect();
+      }, []);
+
+      /* ------------------------------------------------------------------ */
+      /*  The render / physics loop                                         */
+      /* ------------------------------------------------------------------ */
+      useEffect(() => {
+        const cv = canvasRef.current;
+        const ctx = cv.getContext('2d');
+        let raf;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        const bead = (x, y, r, hi, lo, ringHi) => {
+          const g = ctx.createRadialGradient(x - r*0.35, y - r*0.4, r*0.15, x, y, r*1.05);
+          g.addColorStop(0, hi); g.addColorStop(1, lo);
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+          ctx.fillStyle = g; ctx.fill();
+          // glossy highlight
+          ctx.beginPath(); ctx.arc(x - r*0.32, y - r*0.36, r*0.28, 0, Math.PI*2);
+          ctx.fillStyle = ringHi || 'rgba(255,255,255,0.45)'; ctx.fill();
+        };
+
+        const frame = (ts) => {
+          const s = sim.current;
+          const th = s.theme;
+          let dt = (ts - (s.last || ts)) / 1000;
+          s.last = ts;
+          if (dt > 0.05) dt = 0.05;            // clamp after tab-switch
+          const W = s.w, H = s.h, R = s.r, SP = s.spacing, cx = W/2, gate = s.gate;
+
+          ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+          ctx.clearRect(0, 0, W, H);
+
+          /* --- the guiding string --- */
+          ctx.strokeStyle = th.string; ctx.lineWidth = Math.max(1.5, R*0.16);
+          ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+
+          /* --- ease the slide-down of the top column --- */
+          if (s.slide < 0) { s.slide += (0 - s.slide) * Math.min(1, dt * 9); if (s.slide > -0.3) s.slide = 0; }
+
+          /* --- top reservoir column (remaining beads stacked above gate) --- */
+          const shown = s.infinite ? 0 : s.remaining;
+          for (let i = 0; i < shown; i++) {
+            const y = gate - SP * i + s.slide;
+            if (y < -R) break;                 // off the top — done drawing
+            let alpha = 1;
+            if (y < R*3) alpha = Math.max(0.12, (y + R) / (R*4)); // fade near top edge
+            const isMarker = !s.infinite && ((s.target - (s.remaining - 1 - i)) % 33 === 0) && i !== 0 && false;
+            ctx.globalAlpha = alpha;
+            const marker = ((i) % 33 === 32);  // a gold separator every 33 beads up the string
+            if (marker) bead(cx, y, R*1.12, th.markerHi, th.marker);
+            else        bead(cx, y, R, th.beadTopHi, th.beadTop);
+            ctx.globalAlpha = 1;
+          }
+
+          /* infinite mode: a gentle endless shimmer column */
+          if (s.infinite) {
+            for (let i = 0; i < 7; i++) {
+              const y = gate - SP * i + s.slide;
+              if (y < -R) break;
+              ctx.globalAlpha = Math.max(0.08, 1 - i/7);
+              bead(cx, y, R, th.beadTopHi, th.beadTop);
+              ctx.globalAlpha = 1;
+            }
+          }
+
+          /* --- falling beads physics --- */
+          const floor = H - R*1.4;
+          for (let k = s.falling.length - 1; k >= 0; k--) {
+            const b = s.falling[k];
+            b.vy += 2100 * dt;                 // gravity (weightful)
+            b.y  += b.vy * dt;
+            // ease horizontally toward its settle slot
+            b.x += (b.sx - b.x) * Math.min(1, dt * 4.5);
+            if (b.y >= b.sy) {                 // contact with slot level
+              b.y = b.sy;
+              if (Math.abs(b.vy) > 120 && b.bounces < 2) {
+                b.vy = -b.vy * 0.34;           // soft bounce
+                b.bounces++;
+              } else {
+                // settle
+                b.settled = true;
+                s.settled.push(b);
+                s.settledCount++;
+                s.falling.splice(k, 1);
+              }
+            }
+            if (!b.settled) bead(b.x, b.y, b.marker ? R*1.12 : R,
+                                 b.marker ? th.markerHi : th.beadBottomHi,
+                                 b.marker ? th.marker : th.beadBottom);
+          }
+
+          /* --- settled bottom pile --- */
+          for (const b of s.settled) {
+            bead(b.x, b.sy, b.marker ? R*1.12 : R,
+                 b.marker ? th.markerHi : th.beadBottomHi,
+                 b.marker ? th.marker : th.beadBottom);
+          }
+
+          /* --- completion glow + particles --- */
+          if (s.glow > 0) {
+            const g = ctx.createRadialGradient(cx, gate, 0, cx, gate, Math.max(W,H)*0.55);
+            g.addColorStop(0, th.glow + (0.28 * s.glow) + ')');
+            g.addColorStop(1, th.glow + '0)');
+            ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+            s.glow -= dt * 0.5; if (s.glow < 0) s.glow = 0;
+          }
+          for (let k = s.particles.length - 1; k >= 0; k--) {
+            const p = s.particles[k];
+            p.life -= dt;
+            p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 240 * dt;
+            if (p.life <= 0) { s.particles.splice(k,1); continue; }
+            ctx.globalAlpha = Math.max(0, p.life / p.max);
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+            ctx.fillStyle = th.gold; ctx.fill();
+            ctx.globalAlpha = 1;
+          }
+
+          raf = requestAnimationFrame(frame);
+        };
+        raf = requestAnimationFrame(frame);
+        return () => cancelAnimationFrame(raf);
+      }, []);
+
+      /* ------------------------------------------------------------------ */
+      /*  Slot position for a settled bead (bottom heap)                    */
+      /* ------------------------------------------------------------------ */
+      const slotFor = (idx) => {
+        const s = sim.current;
+        const W = s.w, H = s.h, R = s.r, SP = R * 2.05;
+        const margin = R * 1.6;
+        const perRow = Math.max(4, Math.floor((W - margin*2) / SP));
+        const row = Math.floor(idx / perRow);
+        const col = idx % perRow;
+        const offset = (row % 2) * (SP/2);
+        const x = margin + R + col * SP + offset;
+        const y = (H - R*1.4) - row * (SP * 0.82);
+        return { x, y };
+      };
+
+      /* ------------------------------------------------------------------ */
+      /*  TAP — the core counting interaction                               */
+      /* ------------------------------------------------------------------ */
+      const onTap = useCallback(() => {
+        const s = sim.current;
+        if (!s.infinite && s.remaining <= 0) return;   // nothing left to drop
+
+        // 1) increment immediately, the instant the bead detaches
+        setCount(c => {
+          const nc = c + 1;
+          const isMarker = nc % 33 === 0;
+
+          // 2) detach the lowest top bead -> becoming a falling bead
+          const slot = slotFor(s.settledCount + s.falling.length);
+          s.falling.push({
+            x: s.w/2 + (Math.random()-0.5)*2,
+            y: s.gate,
+            vy: 60 + Math.random()*40,
+            sx: slot.x, sy: slot.y,
+            marker: isMarker, bounces: 0, settled: false,
+          });
+
+          if (!s.infinite) { s.remaining -= 1; s.slide = -s.spacing; }
+          else { s.slide = -s.spacing; }
+
+          // 3) completion
+          if (!s.infinite && nc >= s.target) {
+            s.glow = 1;
+            for (let i = 0; i < 46; i++) {
+              const a = Math.random()*Math.PI*2, sp = 60 + Math.random()*260;
+              s.particles.push({
+                x: s.w/2, y: s.gate, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 80,
+                r: 1.5 + Math.random()*2.5, life: 0.7 + Math.random()*0.7, max: 1.4,
+              });
+            }
+            setDone(true);
+          }
+          return nc;
+        });
+
+        // 4) feedback
+        clink();
+        if (haptic && navigator.vibrate) navigator.vibrate(12);
+        setPulse(p => p + 1);
+      }, [haptic, clink]);
+
+      /* ------------------------------------------------------------------ */
+      /*  RESET — long press refill with shuffle                            */
+      /* ------------------------------------------------------------------ */
+      const holdRef = useRef(null);
+      const startHold = (e) => {
+        e.stopPropagation();
+        const start = performance.now();
+        const tick = () => {
+          const p = Math.min(1, (performance.now() - start) / 750);
+          setResetHold(p);
+          if (p >= 1) { doReset(); endHold(); }
+          else holdRef.current = requestAnimationFrame(tick);
+        };
+        holdRef.current = requestAnimationFrame(tick);
+      };
+      const endHold = (e) => {
+        if (e) e.stopPropagation();
+        if (holdRef.current) cancelAnimationFrame(holdRef.current);
+        setResetHold(0);
+      };
+      const doReset = () => {
+        initField(target);
+        setCount(0); setDone(false);
+        // shuffle-in: nudge the slide for a rolling refill feel
+        const s = sim.current;
+        s.slide = -s.spacing * 1.4;
+        if (haptic && navigator.vibrate) navigator.vibrate([8, 30, 8]);
+      };
+
+      /* ------------------------------------------------------------------ */
+      /*  Render                                                            */
+      /* ------------------------------------------------------------------ */
+      const progress = isInfinite ? 0 : Math.min(1, count / target);
+
+      return (
+        <div className={dark ? 'dark' : ''} style={{ width: '100%', height: '100%' }}>
+          {/* phone frame */}
+          <div
+            className="relative mx-auto my-auto overflow-hidden select-none"
+            style={{
+              width: 'min(412px, 96vw)',
+              height: 'min(880px, 94vh)',
+              aspectRatio: '412 / 880',
+              borderRadius: 46,
+              background: t.bg0,
+              boxShadow: dark
+                ? '0 40px 90px -20px rgba(0,0,0,.7), 0 0 0 11px #0a0a0a, 0 0 0 13px #2a2a2a'
+                : '0 40px 90px -24px rgba(80,60,30,.45), 0 0 0 11px #1c1c1e, 0 0 0 13px #3a3a3c',
+            }}
+          >
+            {/* background wash */}
+            <div className="absolute inset-0" style={{
+              background: `radial-gradient(120% 60% at 50% 0%, ${t.bg1} 0%, ${t.bg0} 55%)`,
+            }} />
+
+            {/* canvas (visual layer) */}
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+            {/* transparent tap layer — tap ANYWHERE counts */}
+            <button
+              aria-label={`Count ${dhikr.id === 'custom' ? (customText || 'dhikr') : dhikr.label}`}
+              onClick={onTap}
+              className="absolute inset-0 h-full w-full cursor-pointer"
+              style={{ background: 'transparent', WebkitTapHighlightColor: 'transparent' }}
+            />
+
+            {/* ---- top notch / status bar ---- */}
+            <div className="pointer-events-none absolute left-1/2 top-2.5 z-30 h-6 w-28 -translate-x-1/2 rounded-full"
+                 style={{ background: '#0a0a0a' }} />
+
+            {/* ---- HEADER ---- */}
+            <div className="absolute inset-x-0 top-0 z-20 px-5 pt-12 pb-2" style={{ pointerEvents: 'none' }}>
+              <div className="flex items-center justify-between" style={{ pointerEvents: 'auto' }}>
+                <div>
+                  <p className="text-[11px] font-medium tracking-[0.22em] uppercase" style={{ color: t.textMuted }}>
+                    Dzikir
+                  </p>
+                  <h1 className="font-lora text-lg leading-tight" style={{ color: t.text }}>
+                    {dhikr.id === 'custom' ? (customText || 'Custom Dhikr') : dhikr.label}
+                  </h1>
+                </div>
+                <div className="flex items-center gap-2">
+                  <HeaderBtn t={t} active={sound} onClick={() => setSound(v => !v)} label="Toggle sound">
+                    {sound ? <Icon.Volume2 size={18}/> : <Icon.VolumeX size={18}/>}
+                  </HeaderBtn>
+                  <HeaderBtn t={t} active={haptic} onClick={() => setHaptic(v => !v)} label="Toggle haptics">
+                    <Icon.Vibrate size={18}/>
+                  </HeaderBtn>
+                  <HeaderBtn t={t} active={dark} onClick={() => setDark(v => !v)} label="Toggle dark mode">
+                    {dark ? <Icon.Moon size={18}/> : <Icon.Sun size={18}/>}
+                  </HeaderBtn>
+                </div>
+              </div>
+
+              {/* ---- Dhikr selector (horizontal scroll) ---- */}
+              <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1" style={{ pointerEvents: 'auto' }}>
+                {DHIKR.map((d, i) => (
+                  <button key={d.id}
+                    onClick={(e) => { e.stopPropagation(); setDhikrIdx(i); }}
+                    className="shrink-0 cursor-pointer rounded-full px-4 py-1.5 text-[13px] font-medium transition-all duration-200 active:scale-95"
+                    style={{
+                      background: i === dhikrIdx ? t.emerald : t.surface,
+                      color: i === dhikrIdx ? '#fff' : t.textMuted,
+                      border: `1px solid ${i === dhikrIdx ? 'transparent' : t.surfaceBorder}`,
+                      backdropFilter: 'blur(6px)',
+                    }}>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* custom input */}
+              {dhikr.id === 'custom' && (
+                <div style={{ pointerEvents: 'auto' }} className="mt-2">
+                  <input
+                    value={customText}
+                    onChange={(e) => setCustomText(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Type your dhikr…"
+                    className="w-full rounded-xl px-3.5 py-2 text-sm outline-none transition-colors"
+                    style={{ background: t.surface, color: t.text, border: `1px solid ${t.surfaceBorder}` }}
+                  />
+                </div>
+              )}
+
+              {/* ---- target selector ---- */}
+              <div className="mt-3 flex items-center justify-center gap-2" style={{ pointerEvents: 'auto' }}>
+                {TARGETS.map((tg, i) => (
+                  <button key={i}
+                    onClick={(e) => { e.stopPropagation(); setTargetIdx(i); }}
+                    className="grid h-9 min-w-[3rem] place-items-center cursor-pointer rounded-full px-3 text-sm font-semibold transition-all duration-200 active:scale-95"
+                    style={{
+                      background: i === targetIdx ? t.sand : 'transparent',
+                      color: i === targetIdx ? t.text : t.textMuted,
+                      border: `1px solid ${i === targetIdx ? t.surfaceBorder : 'transparent'}`,
+                    }}>
+                    {tg === Infinity ? <Icon.Infinity size={18}/> : tg}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ---- CENTER count + arabic (pointer pass-through) ---- */}
+            <div className="pointer-events-none absolute inset-x-0 z-10 flex flex-col items-center"
+                 style={{ top: '46%', transform: 'translateY(-50%)' }}>
+              <PulseCount value={count} pulseKey={pulse} t={t} />
+              <p className="mt-1 text-xs font-medium tracking-widest" style={{ color: t.textMuted }}>
+                {isInfinite ? '∞ continuous' : `of ${target}`}
+              </p>
+            </div>
+
+            {/* ---- arabic phrase block (lower third, pass-through) ---- */}
+            {dhikr.id !== 'custom' && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-28 z-10 flex flex-col items-center px-6 text-center">
+                <p className="font-amiri leading-[1.7]" style={{ color: t.text, fontSize: 38 }} dir="rtl">
+                  {dhikr.arabic}
+                </p>
+                <p className="mt-1 text-sm font-medium" style={{ color: t.emerald }}>{dhikr.translit}</p>
+                <p className="text-xs" style={{ color: t.textMuted }}>{dhikr.meaning}</p>
+              </div>
+            )}
+
+            {/* ---- bottom bar: reset (long press) + progress hint ---- */}
+            <div className="absolute inset-x-0 bottom-0 z-20 px-6 pb-7 pt-3"
+                 style={{ pointerEvents: 'none' }}>
+              <div className="flex items-center justify-between" style={{ pointerEvents: 'auto' }}>
+                {/* reset */}
+                <button
+                  onPointerDown={startHold}
+                  onPointerUp={endHold}
+                  onPointerLeave={endHold}
+                  className="relative grid h-11 w-11 place-items-center overflow-hidden rounded-full cursor-pointer transition-transform active:scale-95"
+                  style={{ background: t.surface, border: `1px solid ${t.surfaceBorder}`, color: t.textMuted }}
+                  aria-label="Hold to reset"
+                  title="Hold to reset"
+                >
+                  {/* fill ring */}
+                  <div className="absolute inset-0" style={{
+                    background: `conic-gradient(${t.emerald} ${resetHold*360}deg, transparent 0deg)`,
+                    opacity: 0.9, transition: 'none',
+                  }} />
+                  <div className="absolute inset-[3px] rounded-full" style={{ background: t.bg0 }} />
+                  <Icon.RotateCcw size={18} style={{ position: 'relative' }} />
+                </button>
+
+                <p className="text-[11px]" style={{ color: t.textMuted }}>
+                  {resetHold > 0 ? 'Keep holding to refill…' : 'Tap anywhere to count · hold reset to refill'}
+                </p>
+
+                {/* thin progress */}
+                <div className="grid h-11 w-11 place-items-center">
+                  {!isInfinite ? (
+                    <ProgressRing progress={progress} t={t} />
+                  ) : (
+                    <Icon.Infinity size={20} style={{ color: t.emerald }} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ---- COMPLETION CARD ---- */}
+            {done && !isInfinite && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center px-8"
+                   onClick={(e) => e.stopPropagation()}>
+                <div className="animate-floatIn w-full max-w-[300px] rounded-3xl p-7 text-center"
+                     style={{
+                       background: t.surface, border: `1px solid ${t.surfaceBorder}`,
+                       backdropFilter: 'blur(18px)',
+                       boxShadow: `0 30px 60px -20px ${dark ? 'rgba(0,0,0,.6)' : 'rgba(150,120,60,.35)'}`,
+                     }}>
+                  <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full"
+                       style={{ background: t.emerald }}>
+                    <Icon.Check size={28} color="#fff" />
+                  </div>
+                  <p className="font-amiri text-2xl" style={{ color: t.text }} dir="rtl">ٱلْحَمْدُ لِلَّٰهِ</p>
+                  <p className="mt-1 font-lora text-lg" style={{ color: t.text }}>Completed</p>
+                  <p className="mt-1 text-sm" style={{ color: t.textMuted }}>
+                    {target} × {dhikr.id === 'custom' ? (customText || 'dhikr') : dhikr.label}
+                  </p>
+                  <div className="mt-5 flex gap-2">
+                    <button
+                      onClick={() => { initField(target); setCount(0); setDone(false); }}
+                      className="flex-1 cursor-pointer rounded-2xl py-2.5 text-sm font-semibold transition-transform active:scale-95"
+                      style={{ background: t.emerald, color: '#fff' }}>
+                      Again
+                    </button>
+                    <button
+                      onClick={() => setDone(false)}
+                      className="cursor-pointer rounded-2xl px-4 py-2.5 text-sm font-medium transition-transform active:scale-95"
+                      style={{ background: 'transparent', color: t.textMuted, border: `1px solid ${t.surfaceBorder}` }}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ---- animated count with haptic pulse ---- */
+    function PulseCount({ value, pulseKey, t }) {
+      const [s, setS] = useState(1);
+      useEffect(() => {
+        setS(1.14);
+        const id = setTimeout(() => setS(1), 110);
+        return () => clearTimeout(id);
+      }, [pulseKey]);
+      return (
+        <div className="font-lora tabular-nums"
+             style={{
+               fontSize: 76, lineHeight: 1, fontWeight: 600, color: t.text,
+               transform: `scale(${s})`,
+               transition: 'transform .16s cubic-bezier(.34,1.56,.64,1)',
+               textShadow: `0 2px 24px ${t.glow}0.25)`,
+             }}>
+          {value}
+        </div>
+      );
+    }
+
+    /* ---- small SVG progress ring ---- */
+    function ProgressRing({ progress, t }) {
+      const R = 16, C = 2*Math.PI*R;
+      return (
+        <svg width="40" height="40" viewBox="0 0 40 40">
+          <circle cx="20" cy="20" r={R} fill="none" stroke={t.surfaceBorder} strokeWidth="3" />
+          <circle cx="20" cy="20" r={R} fill="none" stroke={t.emerald} strokeWidth="3"
+                  strokeLinecap="round" strokeDasharray={C}
+                  strokeDashoffset={C * (1 - progress)}
+                  transform="rotate(-90 20 20)"
+                  style={{ transition: 'stroke-dashoffset .4s cubic-bezier(.22,1,.36,1)' }} />
+        </svg>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+
+  <!-- Compile + run with the classic runtime (React.createElement) -->
+  <script>
+    (function () {
+      function boot() {
+        try {
+          var src = document.getElementById('app-source').textContent;
+          var out = Babel.transform(src, {
+            presets: [['react', { runtime: 'classic' }]],
+            filename: 'app.jsx',
+          }).code;
+          var s = document.createElement('script');
+          s.textContent = out;
+          document.body.appendChild(s);
+        } catch (e) {
+          var root = document.getElementById('root');
+          root.innerHTML = '<pre style="color:#b00;white-space:pre-wrap;'
+            + 'font:13px monospace;padding:16px">' + String(e && (e.stack || e)) + '</pre>';
+          console.error(e);
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+      } else { boot(); }
+    })();
+  </script>
+</body>
+</html>
